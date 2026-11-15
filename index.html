@@ -351,6 +351,13 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
   </div>
   <div class="row"><span class="small">不透明度</span><input type="range" id="symOp" min="0.1" max="0.9" step="0.05" value="0.35"><span class="lv" id="symOpV" style="width:40px">0.35</span></div>
   <div class="small" id="symInfo">結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します。対称分子をクリックすると、解析に加える候補として選べます。</div>
+  <div id="symBuiltNote" style="display:none">
+    <div class="small" id="symBuiltTxt" style="margin:6px 0"></div>
+    <div class="row">
+      <button id="symBack">元の構造に戻す（この構造を削除）</button>
+      <button id="symShowOrig">元の構造に切り替える（この構造は残す）</button>
+    </div>
+  </div>
   <div id="symPick" style="display:none">
     <div class="small" style="margin-top:6px">解析に加える対称分子（Chain単位）。分子ウィンドウで対称分子をクリックしても選べます。</div>
     <div id="symList"></div>
@@ -521,6 +528,9 @@ const EXACT = new Map(Object.entries({
   '非対称単位（登録された座標そのまま）か、PDBに登録された生物学的集合体か': 'Asymmetric unit (coordinates as deposited) or a biological assembly registered in the PDB',
   '解析に加える対称分子（Chain単位）。分子ウィンドウで対称分子をクリックしても選べます。': 'Symmetry copies to add for analysis (per chain). You can also click a copy in the viewer.',
   '選んだ対称分子を加えた構造を作る': 'Build a structure with the picked copies',
+  '元の構造に戻す（この構造を削除）': 'Back to the original (delete this structure)', '元の構造に切り替える（この構造は残す）': 'Switch to the original (keep this structure)', 'この構造を削除': 'Delete this structure',
+  'この構造は対称分子を加えて作ったものです。対称分子の表示は「元の構造に切り替える」を押してから行ってください': 'This structure was built with symmetry copies. To show symmetry copies, press "Switch to the original" first',
+  '対称分子を加えた構造を削除しました': 'Deleted the structure built with symmetry copies', '元の構造が見つかりません': 'The original structure was not found',
   '生物学的集合体には対称分子を使えません（非対称単位で読み込んでください）': 'Symmetry copies are not available for a biological assembly (load the asymmetric unit)',
   '対称分子を加えた構造には使えません（元の構造で表示してください）': 'Not available for a structure built with symmetry copies (use the original structure)',
   '手元の構造ファイル…': 'Local structure file…',
@@ -732,8 +742,11 @@ const PATTERNS = [
   P(/^選んだ対称分子 (\d+) 本を加えた構造を作る$/, (m, n) => `Build a structure with the ${n} picked copies`),
   P(/^対称分子 Chain (\S+)（(.+)）を選びました。.*$/, (m, c, o) => `Picked symmetry copy of chain ${c} (${o}). Use "Build a structure…" in the symmetry panel to analyse it`),
   P(/^対称分子 Chain (\S+) の選択を外しました$/, (m, c) => `Unpicked symmetry copy of chain ${c}`),
-  P(/^「(.+)」を作りました：(.+)。元の構造はそのまま残っています$/, (m, a, b) => `Built "${a}": ${b.replace(/（/g, ' (').replace(/）/g, ')').replace(/、/g, ', ')}. The original structure is unchanged`),
+  P(/^「(.+)」を作りました：(.+)。元の構造は非表示にして残しています$/, (m, a, b) => `Built "${a}": ${b.replace(/（/g, ' (').replace(/）/g, ')').replace(/、/g, ', ')}. The original structure is kept (hidden)`),
   P(/^(.+) の生物学的集合体 (\d+) を読み込めませんでした.*$/, (m, a, b) => `Could not load biological assembly ${b} of ${a} (this assembly may not exist)`),
+  P(/^この構造は、(.+) に対称分子（(.+)）を加えて作ったものです。.*$/, (m, a, b) => `This structure was built from ${a} by adding symmetry copies (${b.replace(/、/g, ', ')}). Show or re-pick symmetry copies in the original structure.`),
+  P(/^対称分子を加えた構造を削除し、(.+) に戻しました$/, (m, a) => `Deleted the structure with symmetry copies and returned to ${a}`),
+  P(/^(.+) に切り替えました（対称分子を加えた構造は非表示にして残しています。.*$/, (m, a) => `Switched to ${a} (the structure with symmetry copies is kept hidden; tick it in the structure list to show it again)`),
   P(/^範囲選択: オン。.*$/, () => 'Box select: on. Drag in the molecule window to select the residues inside the box (press again to turn off)'),
   P(/^範囲選択: (\d+) 残基を(選択しました|追加しました)（奥にある残基も含みます）。.*$/, (m, n, k) => `Box select: ${k === '追加しました' ? 'added' : 'selected'} ${n} residues (including those further back). Save them as a group with "★ Save selection"`),
   P(/^範囲が広すぎます（(\d+) 残基）。.*$/, (m, n) => `The box is too large (${n} residues). Up to 300; zoom in first to narrow it down`),
@@ -2792,7 +2805,7 @@ async function structToJSON(st) {
     : {type: 'file', name: src.name, ext: src.ext, gz: src.gz, data: await fileToDataURL(src.file)};
   const u = st.ui;
   return {
-    name: st.name, pdbId: st.pdbId, visible: st.visible, structure, xf: st.xf, symBuilt: st.symBuilt || null,
+    name: st.name, pdbId: st.pdbId, visible: st.visible, structure, xf: st.xf, symBuilt: st.symBuilt || null, symFromName: st.symFromName || null,
     chains: st.chains.map(c => ({name: c.name, color: c.color, type: c.type, surf: !!c.surf, visible: c.visible})),
     het: {lig: u.lig, ion: u.ion, wat: u.wat, ligColor: u.ligColor},
     surface: {color: u.surfColor, opacity: u.surfOp, elec: u.elec, apbsR: u.apbsR}, prevColors: st.prevColors || null,
@@ -2850,7 +2863,7 @@ async function restoreStruct(j) {
   }
   if (!S) return null;
   if (j.name) S.name = j.name;
-  if (j.symBuilt) S.symBuilt = j.symBuilt;
+  if (j.symBuilt) { S.symBuilt = j.symBuilt; S.symFromName = j.symFromName || ''; }
   if (j.surface) {
     $('#surfColor').value = j.surface.color || 'chain'; $('#surfOp').value = j.surface.opacity ?? 1; $('#surfOpV').textContent = (+$('#surfOp').value).toFixed(2);
     $('#elecRange').value = j.surface.elec ?? 50; $('#elecV').textContent = $('#elecRange').value;
@@ -3123,6 +3136,11 @@ function drawSym(maxChains = 80) {
 }
 async function updateSym() {
   if (!comp) return;
+  if (structs[active] && structs[active].symBuilt) {
+    $('#symOn').checked = false;
+    status('この構造は対称分子を加えて作ったものです。対称分子の表示は「元の構造に切り替える」を押してから行ってください', true);
+    renderSymList(); return;
+  }
   const job = ++symJob;
   if (!$('#symOn').checked) { clearSymComps(); return; }
   const cut = Math.min(30, Math.max(2, +$('#symCut').value || 5));
@@ -3189,7 +3207,21 @@ function symOpText(m) {
     return out + frac(e[12 + r]);
   }).join(',');
 }
+function symOrigOf(S) {
+  if (!S || !S.symBuilt) return -1;
+  let i = structs.findIndex(x => x.sid === S.symFrom);
+  if (i < 0) i = structs.findIndex(x => x !== S && !x.symBuilt && x.name === S.symFromName);
+  return i;
+}
 function renderSymList() {
+  const S = structs[active], note = $('#symBuiltNote');
+  if (S && S.symBuilt) {
+    const oi = symOrigOf(S);
+    note.style.display = '';
+    $('#symBuiltTxt').textContent = `この構造は、${S.symFromName || '元の構造'} に対称分子（${S.symBuilt.map(x => `${x.chain} = ${x.from}`).join('、')}）を加えて作ったものです。対称分子の表示や選び直しは、元の構造で行います。`;
+    $('#symShowOrig').disabled = oi < 0;
+    $('#symBack').textContent = oi < 0 ? 'この構造を削除' : '元の構造に戻す（この構造を削除）';
+  } else note.style.display = 'none';
   const box = $('#symPick');
   if (!sym || !$('#symOn').checked || !sym.list.length) { box.style.display = 'none'; return; }
   box.style.display = '';
@@ -3272,15 +3304,31 @@ async function buildSymStruct() {
   const S = await loadStructure(f, {ext: 'cif', name}, {type: 'file', file: f, name: f.name, ext: 'cif', gz: false}, '');
   if (!S) return;
   S.name = name; S.pdbId = orig.pdbId || ''; S.symBuilt = map.map(x => ({chain: x.nn, from: x.ch, op: x.text}));
+  S.symFrom = orig.sid; S.symFromName = orig.name;
+  const oi = structs.indexOf(orig);
+  if (oi >= 0 && orig.visible) setStructVisible(oi, false);     // the copy contains the same atoms: hide the original so they do not overlap
   // keep the original secondary structure (otherwise NGL recalculates it, and helices/strands can differ from the deposited ones)
   const os = orig.comp.structure, ns = S.comp.structure, code = new Map(), back = new Map(map.map(x => [x.nn, x.ch]));
   os.eachResidue(r => code.set(`${r.chainname}|${r.resno}|${r.inscode}`, os.residueStore.sstruc[r.index]), new NGL.Selection('/0'));
   ns.eachResidue(r => { const k = `${back.get(r.chainname) || r.chainname}|${r.resno}|${r.inscode}`; if (code.has(k)) ns.residueStore.sstruc[r.index] = code.get(k); });
   S.comp.rebuildRepresentations();
   renderAllPanels();
-  status(`「${name}」を作りました：` + map.map(x => `${x.nn} = ${x.ch}（${x.text}）`).join('、') + '。元の構造はそのまま残っています');
+  status(`「${name}」を作りました：` + map.map(x => `${x.nn} = ${x.ch}（${x.text}）`).join('、') + '。元の構造は非表示にして残しています');
 }
 $('#symBuild').onclick = buildSymStruct;
+function symBackToOrig(remove) {
+  const S = structs[active]; if (!S || !S.symBuilt) return;
+  const sid = (structs[symOrigOf(S)] || {}).sid;
+  if (remove) removeStruct(active);
+  const oi = structs.findIndex(x => x.sid === sid);
+  if (oi < 0) { status(remove ? '対称分子を加えた構造を削除しました' : '元の構造が見つかりません', !remove); return; }
+  if (!structs[oi].visible) setStructVisible(oi, true);
+  if (!remove) setStructVisible(active, false);
+  activate(oi); renderAllPanels();
+  status(remove ? `対称分子を加えた構造を削除し、${structs[oi].name} に戻しました` : `${structs[oi].name} に切り替えました（対称分子を加えた構造は非表示にして残しています。構造のリストのチェックで再び表示できます）`);
+}
+$('#symBack').onclick = () => symBackToOrig(true);
+$('#symShowOrig').onclick = () => symBackToOrig(false);
 
 /* ---------- click: centre + neighbourhood ---------- */
 function clearFocusDraw() {
