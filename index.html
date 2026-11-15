@@ -3179,7 +3179,7 @@ $('#symOp').oninput = e => {
 /* The copies share the molecule's Structure, so NGL reports a click on a copy as a click on the original.
    Find which copy (or the original) the picked atom was drawn at: the one whose on-screen position of that atom is nearest the click. */
 function symCompAt(a, pp) {
-  const V = stage.viewer, cam = V.camera, W = V.width, H = V.height, cp = pp.canvasPosition || (pp.mouse && pp.mouse.canvasPosition);
+  const V = stage.viewer, cam = V.camera, W = V.width, H = V.height, cp = pp.tapPos || pp.canvasPosition || (pp.mouse && pp.mouse.canvasPosition);
   if (!cp) return null;
   const cx = cp.x, cy = H - cp.y, v = new NGL.Vector3();
   const dist = c => {
@@ -3438,7 +3438,7 @@ let focusItems = [];
 const FT_KEY = 'pdv_focus_types';
 const focusTypeOn = (() => { const d = {hb: true, salt: true, pi: true, catpi: true, metal: true, water: true, halogen: true, hyd: true, cont: true};
   try { Object.assign(d, JSON.parse(localStorage.getItem(FT_KEY) || '{}')); } catch (e) {} return d; })();
-let flistMin = false;
+let flistMin = true;      // the list starts folded: open it with ▸ 開く when the details are needed
 let optsHintSeen = (() => { try { return localStorage.getItem('pdv_opts_hint') === '1'; } catch (e) { return false; } })();
 /* backbone–backbone = both ends are protein main-chain atoms (N, CA, C, O …); DNA sugar–phosphate counts as "other",
    so main-chain NH → phosphate contacts stay visible */
@@ -3626,6 +3626,7 @@ stage.signals.clicked.add(pp => {
     if (performance.now() - d.t > 400 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
     const r = cv.getBoundingClientRect();
     const pp = stage.pickingControls.pick(e.clientX - r.left, r.height - (e.clientY - r.top));
+    if (pp) pp.tapPos = {x: e.clientX - r.left, y: r.height - (e.clientY - r.top)};   // where the finger was (NGL's own mouse position may lag on touch)
     stage.signals.clicked.dispatch(pp);
   };
   cv.addEventListener('pointerup', end);
