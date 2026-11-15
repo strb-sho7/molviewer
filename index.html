@@ -20,6 +20,10 @@ main{position:relative;display:flex;flex-direction:column;min-height:0}
 #vtools{position:absolute;right:10px;top:10px;z-index:5;display:flex;gap:6px}
 #vtools button{font-size:12px;padding:3px 8px;background:#000a;color:#eee;border:1px solid #ffffff40;border-radius:6px}
 #vtools button.on{background:#5aa9ff;color:#000;border-color:#5aa9ff}
+#symList{max-height:170px;overflow:auto;border:1px solid #2c313b;border-radius:4px;margin:4px 0;padding:2px 4px}
+#symList label{display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0;cursor:pointer}
+#symList label.on{color:#ffd27a}
+#symList code{font-size:11px;opacity:.85}
 #boxLayer{position:absolute;inset:0;z-index:3;display:none;cursor:crosshair;touch-action:none}
 #boxRect{position:absolute;border:1.5px dashed #5aa9ff;background:#5aa9ff22;display:none;pointer-events:none}
 #status{position:absolute;left:10px;bottom:10px;right:10px;pointer-events:none;font-size:13px;color:#ddd;text-shadow:0 1px 2px #000}
@@ -177,6 +181,9 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
   <div class="tabpane" data-tab="struct">
   <div class="row">
     <input type="text" id="pdbId" placeholder="PDB ID（例 4DRB）" maxlength="12">
+    <select id="pdbAsm" title="非対称単位（登録された座標そのまま）か、PDBに登録された生物学的集合体か">
+      <option value="0">非対称単位</option><option value="1">生物学的集合体 1</option><option value="2">生物学的集合体 2</option>
+    </select>
     <button class="pri" id="loadPdb">読込</button>
   </div>
   <div class="row small">
@@ -343,7 +350,12 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
     <span class="small">元の分子から</span><input type="number" id="symCut" value="5" step="1" min="2" max="30" style="width:58px"><span class="small">Å以内のChain</span>
   </div>
   <div class="row"><span class="small">不透明度</span><input type="range" id="symOp" min="0.1" max="0.9" step="0.05" value="0.35"><span class="lv" id="symOpV" style="width:40px">0.35</span></div>
-  <div class="small" id="symInfo">結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します（クリックの対象外）。</div>
+  <div class="small" id="symInfo">結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します。対称分子をクリックすると、解析に加える候補として選べます。</div>
+  <div id="symPick" style="display:none">
+    <div class="small" style="margin-top:6px">解析に加える対称分子（Chain単位）。分子ウィンドウで対称分子をクリックしても選べます。</div>
+    <div id="symList"></div>
+    <div class="row"><button id="symBuild" disabled>選んだ対称分子を加えた構造を作る</button></div>
+  </div>
 
   <h2>選択範囲を追加表示</h2>
   <div class="row">
@@ -505,7 +517,12 @@ let LANG = 'ja';
 try { LANG = localStorage.getItem('pdv_lang') || 'ja'; } catch (e) {}
 const EXACT = new Map(Object.entries({
   'PDB ID（例 4DRB）': 'PDB ID (e.g. 4DRB)',
-  '読込': 'Load',
+  '読込': 'Load', '非対称単位': 'Asymmetric unit', '生物学的集合体 1': 'Biological assembly 1', '生物学的集合体 2': 'Biological assembly 2',
+  '非対称単位（登録された座標そのまま）か、PDBに登録された生物学的集合体か': 'Asymmetric unit (coordinates as deposited) or a biological assembly registered in the PDB',
+  '解析に加える対称分子（Chain単位）。分子ウィンドウで対称分子をクリックしても選べます。': 'Symmetry copies to add for analysis (per chain). You can also click a copy in the viewer.',
+  '選んだ対称分子を加えた構造を作る': 'Build a structure with the picked copies',
+  '生物学的集合体には対称分子を使えません（非対称単位で読み込んでください）': 'Symmetry copies are not available for a biological assembly (load the asymmetric unit)',
+  '対称分子を加えた構造には使えません（元の構造で表示してください）': 'Not available for a structure built with symmetry copies (use the original structure)',
   '手元の構造ファイル…': 'Local structure file…',
   '.pdb / .cif（ドラッグ＆ドロップ可）': '.pdb / .cif (drag & drop works too)',
   'クリックした構造が編集対象（下のChain・相互作用・対称分子の設定はその構造に効きます）': 'Click a structure to edit it (the Chain, interaction and symmetry panels below act on it)',
@@ -550,7 +567,7 @@ const EXACT = new Map(Object.entries({
   '元の分子から': 'Chains within',
   'Å以内のChain': 'Å of the model',
   '不透明度': 'Opacity',
-  '結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します（クリックの対象外）。': 'For crystal structures. Copies use their chain\'s colour and style, semi-transparent (not clickable).',
+  '結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します。対称分子をクリックすると、解析に加える候補として選べます。': 'For crystal structures. Copies use their chain\'s colour and style, semi-transparent. Click a copy to pick it for analysis.',
   '選択範囲を追加表示': 'Show a selection',
   '例 45-60:A ／ ARG and :B ／ 10:C': 'e.g. 45-60:A / ARG and :B / 10:C',
   '色': 'Colour',
@@ -712,6 +729,11 @@ const EXACT = new Map(Object.entries({
 const P = (re, f) => [re, f];
 const PATTERNS = [
   P(/^(.+) を (mmCIF|PDB) 形式として読み込みます$/, (m, a, b) => `Reading ${a} as ${b}`),
+  P(/^選んだ対称分子 (\d+) 本を加えた構造を作る$/, (m, n) => `Build a structure with the ${n} picked copies`),
+  P(/^対称分子 Chain (\S+)（(.+)）を選びました。.*$/, (m, c, o) => `Picked symmetry copy of chain ${c} (${o}). Use "Build a structure…" in the symmetry panel to analyse it`),
+  P(/^対称分子 Chain (\S+) の選択を外しました$/, (m, c) => `Unpicked symmetry copy of chain ${c}`),
+  P(/^「(.+)」を作りました：(.+)。元の構造はそのまま残っています$/, (m, a, b) => `Built "${a}": ${b.replace(/（/g, ' (').replace(/）/g, ')').replace(/、/g, ', ')}. The original structure is unchanged`),
+  P(/^(.+) の生物学的集合体 (\d+) を読み込めませんでした.*$/, (m, a, b) => `Could not load biological assembly ${b} of ${a} (this assembly may not exist)`),
   P(/^範囲選択: オン。.*$/, () => 'Box select: on. Drag in the molecule window to select the residues inside the box (press again to turn off)'),
   P(/^範囲選択: (\d+) 残基を(選択しました|追加しました)（奥にある残基も含みます）。.*$/, (m, n, k) => `Box select: ${k === '追加しました' ? 'added' : 'selected'} ${n} residues (including those further back). Save them as a group with "★ Save selection"`),
   P(/^範囲が広すぎます（(\d+) 残基）。.*$/, (m, n) => `The box is too large (${n} residues). Up to 300; zoom in first to narrow it down`),
@@ -944,7 +966,7 @@ $('#mapBtn').onclick = () => $('#mapFile').click();
 
 /* ---------- structures (several can be loaded; one is "active" and edited by the panels) ---------- */
 let structs = [], active = -1, nextSid = 1;
-const SYM_INFO = '結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します（クリックの対象外）。';
+const SYM_INFO = '結晶構造で使えます。色と表示形式は元のChainに合わせ、半透明で表示します。対称分子をクリックすると、解析に加える候補として選べます。';
 const defaultUI = () => ({surfColor: 'chain', surfOp: 0.6, elec: 50, apbsR: 5, lig: true, ion: true, wat: false, ligColor: '#ffcc80', symOn: false, symCut: 5, symOp: 0.35, symInfo: SYM_INFO,
   ifA: '', ifB: '', ifCut: '4.0', ifLabels: true, ifDist: false, ifShow: true, ifOn: {hb: true, salt: true, pi: true, catpi: true, metal: true, water: true, halogen: true, hyd: true, cont: false}});
 function uiRead() {
@@ -989,7 +1011,7 @@ function activate(i) {
   renderAllPanels();
 }
 function renderAllPanels() {
-  renderStructs(); renderChains(); renderExtras(); fillIfSelects(); fillConsChain(); renderCons(); renderEmHint(); renderIfc(); renderSeq(); renderGroups();
+  renderStructs(); renderChains(); renderExtras(); fillIfSelects(); fillConsChain(); renderCons(); renderEmHint(); renderIfc(); renderSeq(); renderGroups(); renderSymList();
   document.querySelectorAll('.an').forEach(x => x.textContent = structs[active] ? '— ' + structs[active].name : '');
 }
 async function loadStructure(src, o, srcInfo, pid) {
@@ -2766,11 +2788,11 @@ const mapSettings = m => ({level: m.level, color: m.color, neg: m.neg, style: m.
 
 async function structToJSON(st) {
   const src = st.structSrc;
-  const structure = src.type === 'pdb' ? {type: 'pdb', id: src.id}
+  const structure = src.type === 'pdb' ? {type: 'pdb', id: src.id, asm: src.asm || 0}
     : {type: 'file', name: src.name, ext: src.ext, gz: src.gz, data: await fileToDataURL(src.file)};
   const u = st.ui;
   return {
-    name: st.name, pdbId: st.pdbId, visible: st.visible, structure, xf: st.xf,
+    name: st.name, pdbId: st.pdbId, visible: st.visible, structure, xf: st.xf, symBuilt: st.symBuilt || null,
     chains: st.chains.map(c => ({name: c.name, color: c.color, type: c.type, surf: !!c.surf, visible: c.visible})),
     het: {lig: u.lig, ion: u.ion, wat: u.wat, ligColor: u.ligColor},
     surface: {color: u.surfColor, opacity: u.surfOp, elec: u.elec, apbsR: u.apbsR}, prevColors: st.prevColors || null,
@@ -2821,13 +2843,14 @@ async function saveSession() {
 async function restoreStruct(j) {
   const st = j.structure;
   let S;
-  if (st.type === 'pdb') S = await loadStructure(`https://files.rcsb.org/download/${st.id}.cif`, {ext: 'cif', name: st.id}, {type: 'pdb', id: st.id}, st.id);
+  if (st.type === 'pdb') S = await loadPdbEntry(st.id, st.asm || 0);
   else {
     const f = dataURLToFile(st.data, st.name);
     S = await loadStructure(f, {ext: st.ext, compressed: st.gz ? 'gz' : false, name: st.name}, {type: 'file', file: f, name: st.name, ext: st.ext, gz: st.gz}, j.pdbId || '');
   }
   if (!S) return null;
   if (j.name) S.name = j.name;
+  if (j.symBuilt) S.symBuilt = j.symBuilt;
   if (j.surface) {
     $('#surfColor').value = j.surface.color || 'chain'; $('#surfOp').value = j.surface.opacity ?? 1; $('#surfOpV').textContent = (+$('#surfOp').value).toFixed(2);
     $('#elecRange').value = j.surface.elec ?? 50; $('#elecV').textContent = $('#elecRange').value;
@@ -2939,10 +2962,19 @@ $('#openSes').onclick = () => $('#sesFile').click();
 $('#sesFile').addEventListener('change', e => { if (e.target.files[0]) openSession(e.target.files[0]); e.target.value = ''; });
 
 /* ---------- loading entry points ---------- */
+/* asm = 0: asymmetric unit; 1, 2, …: biological assembly n from RCSB (copies get chain names like A-2) */
+const pdbUrl = (id, asm) => asm ? `https://files.rcsb.org/download/${id}-assembly${asm}.cif` : `https://files.rcsb.org/download/${id}.cif`;
+const asmName = (id, asm) => asm ? `${id} 集合体${asm}` : id;
+async function loadPdbEntry(id, asm) {
+  const S = await loadStructure(pdbUrl(id, asm), {ext: 'cif', name: id}, asm ? {type: 'pdb', id, asm} : {type: 'pdb', id}, id);
+  if (S && asm) { S.name = asmName(id, asm); renderAllPanels(); status(`${S.name}（${S.comp.structure.atomCount.toLocaleString()} 原子、Chain ${S.chains.length} 本）を読み込みました。複製されたChainは A-2 のような名前です`); }
+  else if (!S && asm) status(`${id} の生物学的集合体 ${asm} を読み込めませんでした（この番号の集合体が登録されていない可能性があります）`, true);
+  return S;
+}
 function loadById() {
   const id = $('#pdbId').value.trim().toUpperCase();
   if (!/^[0-9A-Z_]{4,12}$/.test(id)) return status('PDB IDは4文字（例 4DRB）で入力してください', true);
-  loadStructure(`https://files.rcsb.org/download/${id}.cif`, {ext: 'cif', name: id}, {type: 'pdb', id}, id);
+  loadPdbEntry(id, +$('#pdbAsm').value || 0);
 }
 $('#loadPdb').onclick = loadById;
 $('#pdbId').addEventListener('keydown', e => { if (e.key === 'Enter') loadById(); });
@@ -2994,6 +3026,9 @@ main.addEventListener('drop', e => { e.preventDefault(); drop.style.display = 'n
 let sym = null, symJob = 0, symOwner = null;
 const tick = () => new Promise(r => setTimeout(r, 0));
 async function computeSym(cut, job, onProgress) {
+  const own = structs[active];
+  if (own && own.structSrc && own.structSrc.asm) throw new Error('生物学的集合体には対称分子を使えません（非対称単位で読み込んでください）');
+  if (own && own.symBuilt) throw new Error('対称分子を加えた構造には使えません（元の構造で表示してください）');
   const st = comp.structure, uc = st.unitcell, asm = st.biomolDict && st.biomolDict.UNITCELL;
   if (!uc || !asm || !asm.partList.length) throw new Error('この構造には結晶の格子・空間群の情報がありません（クライオEM・NMR構造など）');
   const ops = asm.partList[0].matrixList;
@@ -3059,7 +3094,7 @@ function symSafeDispose() {
   if (this.measureRepresentations) this.measureRepresentations.dispose();
   this.signals.disposed.dispatch();
 }
-function clearSymComps() { if (sym) { sym.comps.forEach(c => stage.removeComponent(c)); sym.comps = []; } }
+function clearSymComps() { if (sym) { sym.comps.forEach(c => stage.removeComponent(c)); sym.comps = []; } const b = document.getElementById('symPick'); if (b) b.style.display = 'none'; }
 function drawSym(maxChains = 80) {
   if (!sym || !comp) return;
   clearSymComps();
@@ -3074,11 +3109,13 @@ function drawSym(maxChains = 80) {
     const c = stage.addComponentFromObject(comp.structure, {name: 'symmetry'});
     c.dispose = symSafeDispose;   // the structure is shared with the main component: never dispose it
     c.setTransform(s.m);
+    c.symIdx = sym.list.indexOf(s); c.symReps = {};
     for (const n of s.chains) {
       const ch = chains.find(x => x.name === n);
       if (!ch || !ch.visible) continue;
-      repSpecs(ch).forEach(([t, p]) => c.addRepresentation(t, {...p, opacity: op, disablePicking: true}));
-      if ($('#showLig').checked) c.addRepresentation('ball+stick', {sele: `:${n} and ligand and not hydrogen`, color: 'element', colorValue: hexNum($('#ligColor').dataset.v), opacity: op, disablePicking: true});
+      const o = symOpacity(c.symIdx, n), rs = c.symReps[n] = [];
+      repSpecs(ch).forEach(([t, p]) => rs.push(c.addRepresentation(t, {...p, opacity: o})));
+      if ($('#showLig').checked) rs.push(c.addRepresentation('ball+stick', {sele: `:${n} and ligand and not hydrogen`, color: 'element', colorValue: hexNum($('#ligColor').dataset.v), opacity: o}));
     }
     sym.comps.push(c);
   }
@@ -3104,7 +3141,7 @@ async function updateSym() {
     }
     if (!$('#symOn').checked) return;
     const MAXC = 80, n = sym.list.reduce((a, x) => a + x.chains.length, 0);
-    drawSym(MAXC);
+    drawSym(MAXC); renderSymList();
     $('#symInfo').textContent = `${cut} Å以内の対称分子: ${sym.list.length} 個（Chain単位で ${n}）。空間群 ${comp.structure.unitcell.spacegroup || ''}` +
       (n > MAXC ? `。多すぎるため近い順に ${MAXC} Chain分だけ表示しています` : '');
     status(`対称分子を表示しました（${sym.list.length} 個）`);
@@ -3118,8 +3155,132 @@ $('#symOn').onchange = () => updateSym();
 $('#symCut').onchange = () => { if ($('#symOn').checked) updateSym(); };
 $('#symOp').oninput = e => {
   $('#symOpV').textContent = (+e.target.value).toFixed(2);
-  if (sym) sym.comps.forEach(c => c.eachRepresentation(r => r.setParameters({opacity: +e.target.value})));
+  if (sym) sym.comps.forEach(c => Object.entries(c.symReps || {}).forEach(([n, rs]) => rs.forEach(r => r.setParameters({opacity: symOpacity(c.symIdx, n)}))));
 };
+/* ---------- picking symmetry copies and turning them into real chains ---------- */
+/* The copies share the molecule's Structure, so NGL reports a click on a copy as a click on the original.
+   Find which copy (or the original) the picked atom was drawn at: the one whose on-screen position of that atom is nearest the click. */
+function symCompAt(a, pp) {
+  const V = stage.viewer, cam = V.camera, W = V.width, H = V.height, cp = pp.canvasPosition || (pp.mouse && pp.mouse.canvasPosition);
+  if (!cp) return null;
+  const cx = cp.x, cy = H - cp.y, v = new NGL.Vector3();
+  const dist = c => {
+    v.set(a.x, a.y, a.z).applyMatrix4(V.modelGroup.matrixWorld.clone().multiply(c.matrix)).project(cam);
+    return Math.hypot((v.x + 1) / 2 * W - cx, (1 - v.y) / 2 * H - cy);
+  };
+  let best = comp, bd = dist(comp);
+  for (const c of sym.comps) if (c.symReps && c.symReps[a.chainname]) { const d = dist(c); if (d < bd) { bd = d; best = c; } }
+  return best === comp ? null : best;
+}
+const symKey = (i, ch) => `${i}|${ch}`;
+const symOpacity = (i, ch) => sym && sym.pick && sym.pick.has(symKey(i, ch)) ? Math.max(0.85, +$('#symOp').value) : +$('#symOp').value;
+/* the symmetry operator as text (-x,y+1/2,-z+1), from the Cartesian matrix via fractional coordinates */
+function symOpText(m) {
+  const uc = comp.structure.unitcell;
+  const F = new NGL.Matrix4().multiplyMatrices(uc.cartToFrac, new NGL.Matrix4().multiplyMatrices(m, uc.fracToCart)), e = F.elements;
+  const frac = t => {
+    const n = Math.round(t * 12); if (!n) return '';
+    const g = (a, b) => b ? g(b, a % b) : a, d = g(Math.abs(n), 12);
+    return (n > 0 ? '+' : '-') + (12 / d === 1 ? Math.abs(n) / d : `${Math.abs(n) / d}/${12 / d}`);
+  };
+  return [0, 1, 2].map(r => {
+    let out = '';
+    ['x', 'y', 'z'].forEach((v, c) => { const k = Math.round(e[c * 4 + r]); if (k) out += (k > 0 ? (out ? '+' : '') : '-') + (Math.abs(k) > 1 ? Math.abs(k) : '') + v; });
+    return out + frac(e[12 + r]);
+  }).join(',');
+}
+function renderSymList() {
+  const box = $('#symPick');
+  if (!sym || !$('#symOn').checked || !sym.list.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  sym.pick = sym.pick || new Set();
+  const drawn = new Set(sym.comps.map(c => c.symIdx));
+  const rows = [];
+  sym.list.forEach((s, i) => {
+    if (!drawn.has(i)) return;
+    s.text = s.text || symOpText(s.m);
+    s.chains.forEach(n => {
+      const on = sym.pick.has(symKey(i, n));
+      rows.push(`<label class="${on ? 'on' : ''}"><input type="checkbox" data-k="${esc(symKey(i, n))}"${on ? ' checked' : ''}> Chain ${esc(n)} <code>${esc(s.text)}</code></label>`);
+    });
+  });
+  $('#symList').innerHTML = rows.join('');
+  $('#symBuild').disabled = !sym.pick.size;
+  $('#symBuild').textContent = sym.pick.size ? `選んだ対称分子 ${sym.pick.size} 本を加えた構造を作る` : '選んだ対称分子を加えた構造を作る';
+}
+function toggleSymPick(i, ch) {
+  if (!sym) return;
+  sym.pick = sym.pick || new Set();
+  const k = symKey(i, ch);
+  if (sym.pick.has(k)) sym.pick.delete(k); else sym.pick.add(k);
+  const c = sym.comps.find(x => x.symIdx === i);
+  if (c && c.symReps[ch]) c.symReps[ch].forEach(r => r.setParameters({opacity: symOpacity(i, ch)}));
+  renderSymList();
+  const s = sym.list[i];
+  status(sym.pick.has(k) ? `対称分子 Chain ${ch}（${s.text || symOpText(s.m)}）を選びました。対称分子パネルの「…加えた構造を作る」で解析できるようになります` : `対称分子 Chain ${ch} の選択を外しました`);
+}
+$('#symList').addEventListener('change', e => {
+  const k = e.target.dataset.k; if (!k) return;
+  const [i, ch] = [+k.split('|')[0], k.slice(k.indexOf('|') + 1)];
+  toggleSymPick(i, ch);
+});
+/* mmCIF text of the active structure (first model) plus the picked copies as new chains (A → A1, A2, …) */
+function cifQ(v) {
+  v = String(v ?? '');
+  if (v === '') return '.';
+  return /[\s'"#]|^[_$;\[\]]/.test(v) ? (v.includes('"') ? `'${v}'` : `"${v}"`) : v;
+}
+function buildSymCif(picks, title) {
+  const st = comp.structure, names = new Set(chains.map(c => c.name)), map = [];
+  for (const {i, ch} of picks) {
+    let k = 1; while (names.has(ch + k)) k++;
+    const nn = ch + k; names.add(nn);
+    map.push({i, ch, nn, m: sym.list[i].m, text: sym.list[i].text || symOpText(sym.list[i].m)});
+  }
+  const L = ['data_' + (title.replace(/[^\w]+/g, '_') || 'sym'), '#', `_struct.entry_id ${cifQ(title)}`,
+    `_struct.title ${cifQ(title + '：' + map.map(x => `${x.nn} = ${x.ch} (${x.text})`).join(', '))}`, '#', 'loop_'];
+  ['group_PDB', 'id', 'type_symbol', 'label_atom_id', 'label_alt_id', 'label_comp_id', 'label_asym_id', 'label_entity_id', 'label_seq_id',
+    'pdbx_PDB_ins_code', 'Cartn_x', 'Cartn_y', 'Cartn_z', 'occupancy', 'B_iso_or_equiv', 'auth_seq_id', 'auth_comp_id', 'auth_asym_id', 'auth_atom_id', 'pdbx_PDB_model_num']
+    .forEach(f => L.push('_atom_site.' + f));
+  let id = 0;
+  const v = new NGL.Vector3();
+  const add = (a, chain, m) => {
+    v.set(a.x, a.y, a.z); if (m) v.applyMatrix4(m);
+    const het = a.isHetero();
+    L.push([het ? 'HETATM' : 'ATOM', ++id, cifQ(a.element || '?'), cifQ(a.atomname), cifQ(a.altloc || '.'), cifQ(a.resname), cifQ(chain), '1',
+      het ? '.' : a.resno, cifQ(a.inscode || '?'), v.x.toFixed(3), v.y.toFixed(3), v.z.toFixed(3), (+a.occupancy || 1).toFixed(2), (+a.bfactor || 0).toFixed(2),
+      a.resno, cifQ(a.resname), cifQ(chain), cifQ(a.atomname), 1].join(' '));
+  };
+  st.eachAtom(a => add(a, a.chainname, null), new NGL.Selection('/0'));
+  for (const x of map) st.eachAtom(a => add(a, x.nn, x.m), new NGL.Selection(`:${x.ch} and /0`));
+  L.push('#');
+  // NGL's mmCIF reader needs the chem_comp table (residue name → polymer type)
+  const cc = new Map();
+  st.eachResidue(r => { if (!cc.has(r.resname)) cc.set(r.resname, r.isProtein() ? 'L-peptide linking' : r.isDna() ? 'DNA linking' : r.isRna() ? 'RNA linking' : 'non-polymer'); }, new NGL.Selection('/0'));
+  L.push('loop_', '_chem_comp.id', '_chem_comp.type');
+  cc.forEach((t, n) => L.push(`${cifQ(n)} ${cifQ(t)}`));
+  L.push('#', '');
+  return {text: L.join('\n'), map};
+}
+async function buildSymStruct() {
+  if (!sym || !sym.pick || !sym.pick.size) return;
+  const orig = structs[active];
+  const picks = [...sym.pick].map(k => ({i: +k.split('|')[0], ch: k.slice(k.indexOf('|') + 1)}));
+  const name = `${orig.name}+対称`;
+  const {text, map} = buildSymCif(picks, name);
+  const f = new File([text], name.replace(/[^\w+-]+/g, '_') + '.cif');
+  const S = await loadStructure(f, {ext: 'cif', name}, {type: 'file', file: f, name: f.name, ext: 'cif', gz: false}, '');
+  if (!S) return;
+  S.name = name; S.pdbId = orig.pdbId || ''; S.symBuilt = map.map(x => ({chain: x.nn, from: x.ch, op: x.text}));
+  // keep the original secondary structure (otherwise NGL recalculates it, and helices/strands can differ from the deposited ones)
+  const os = orig.comp.structure, ns = S.comp.structure, code = new Map(), back = new Map(map.map(x => [x.nn, x.ch]));
+  os.eachResidue(r => code.set(`${r.chainname}|${r.resno}|${r.inscode}`, os.residueStore.sstruc[r.index]), new NGL.Selection('/0'));
+  ns.eachResidue(r => { const k = `${back.get(r.chainname) || r.chainname}|${r.resno}|${r.inscode}`; if (code.has(k)) ns.residueStore.sstruc[r.index] = code.get(k); });
+  S.comp.rebuildRepresentations();
+  renderAllPanels();
+  status(`「${name}」を作りました：` + map.map(x => `${x.nn} = ${x.ch}（${x.text}）`).join('、') + '。元の構造はそのまま残っています');
+}
+$('#symBuild').onclick = buildSymStruct;
 
 /* ---------- click: centre + neighbourhood ---------- */
 function clearFocusDraw() {
@@ -3387,6 +3548,10 @@ function unfocus() {
 stage.signals.clicked.add(pp => {
   if (!comp) return;
   if (!pp) { if (lastFocus) unfocus(); return; }
+  if (sym && sym.comps.length && pp.component === comp) {
+    const a = pickedAtom(pp), c = a && symCompAt(a, pp);
+    if (c) { toggleSymPick(c.symIdx, a.chainname); return; }
+  }
   const atom = pickedAtom(pp);
   if (!atom) return;
   const i = structs.findIndex(st => st.comp === pp.component);
@@ -4037,9 +4202,9 @@ async function exportImage() {
 $('#snap').onclick = exportImage;
 renderImgInfo();
 /* ---------- demo structure on first open ----------
-   DEMO_ID is loaded when the page opens. A URL can choose another one:
+   DEMO_ID (if set) is loaded when the page opens. A URL can choose one:
    mol_viewer.html?pdb=1D66 loads 1D66, ?pdb=none (or ?pdb=) opens empty. */
-const DEMO_ID = '24PU';
+const DEMO_ID = '';            // '' = open empty
 (function loadDemo() {
   if (window.__noDemo) return;
   let id = DEMO_ID;
@@ -4053,7 +4218,7 @@ const DEMO_ID = '24PU';
 })();
 /* handle for the browser console and automated tests */
 window.MV = {get structs() { return structs; }, get maps() { return maps; }, get chains() { return chains; }, get stage() { return stage; },
-  chainReps, fetchEntryInfo, applyPendingAbs, renderImgInfo, exportImage};
+  chainReps, symCompAt: (a, pp) => symCompAt(a, pp), fetchEntryInfo, applyPendingAbs, renderImgInfo, exportImage};
 }
 </script>
 </body>
