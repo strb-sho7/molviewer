@@ -1,4 +1,4 @@
-# MoleculeWindow (PDB Density Viewer)
+# MoleculeWindow (PDB Viewer)
 
 **English** | [日本語](README.ja.md)
 
