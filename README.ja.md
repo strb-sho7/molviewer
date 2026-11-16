@@ -1,4 +1,6 @@
-# MoleculeWindow（PDB Viewer）
+# SHOWmol
+
+**S**tructure **H**ighlighting & **O**bservation on the **W**eb（構造を強調して観察できる、ウェブの分子ビューア）
 
 [English](README.md) | **日本語**
 

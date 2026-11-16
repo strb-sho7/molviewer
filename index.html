@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PDB Density Viewer</title>
+<title>SHOWmol — Structure Highlighting &amp; Observation on the Web</title>
 <script src="https://unpkg.com/ngl@2.3.1/dist/ngl.js"></script>
 <style>
 :root{--bg:#14161b;--panel:#1c1f26;--line:#2c313b;--ink:#e8eaee;--mute:#9aa2b1;--acc:#5aa9ff;--warn:#ff7a7a}
@@ -24,6 +24,11 @@ main{position:relative;display:flex;flex-direction:column;min-height:0}
 #symList label{display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0;cursor:pointer}
 #symList label.on{color:#ffd27a}
 #symList code{font-size:11px;opacity:.85}
+#lblLayer{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+#lblLayer svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
+.rlbl{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:auto;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.15;padding:0 1px;font-family:Arial,Helvetica,sans-serif}
+.rlbl.drag{outline:1px dashed #4da3ff}
+#info,#status{z-index:4}
 #boxLayer{position:absolute;inset:0;z-index:3;display:none;cursor:crosshair;touch-action:none}
 #boxRect{position:absolute;border:1.5px dashed #5aa9ff;background:#5aa9ff22;display:none;pointer-events:none}
 #status{position:absolute;left:10px;bottom:10px;right:10px;pointer-events:none;font-size:13px;color:#ddd;text-shadow:0 1px 2px #000}
@@ -133,6 +138,15 @@ kbd{background:#2b3240;border-radius:3px;padding:0 4px;font-size:11px}
 .tag{display:inline-block;border-radius:4px;padding:0 5px;margin:2px 3px 0 0;font-size:11px;color:#111}
 #log{max-height:160px;overflow:auto;font-family:ui-monospace,monospace;font-size:11px;color:var(--warn);white-space:pre-wrap}
 details summary{cursor:pointer;color:var(--mute);font-size:12px}
+details.sec{border:1px solid var(--line);border-radius:8px;margin:0 0 8px;background:#ffffff05}
+details.sec>summary{list-style:none;padding:8px 10px;color:var(--fg,#e6e6e6);font-size:14px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::before{content:'▸';color:var(--mute);width:12px;display:inline-block;transition:transform .15s}
+details.sec[open]>summary::before{transform:rotate(90deg)}
+details.sec>summary .sechint{color:var(--mute);font-size:11px;font-weight:400}
+details.sec>summary:hover{background:#ffffff0a;border-radius:8px}
+details.sec .secbody{padding:2px 10px 10px;border-top:1px solid var(--line)}
+details.sec .subh{font-size:12px;font-weight:600;margin:10px 0 2px;padding-top:8px;border-top:1px dashed var(--line)}
 #seq{flex:none;height:120px;overflow:auto;background:#0b0d11;padding:4px 8px 6px;display:none;font:13px/1 ui-monospace,Menlo,Consolas,monospace}
 #seq.light{background:#ffffff}
 .sqr{white-space:nowrap;padding:12px 0 3px}
@@ -161,7 +175,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
 <div id="app">
 <aside id="side">
   <div class="row" style="justify-content:space-between;margin:0 0 6px">
-    <h1 style="margin:0">PDB Density Viewer</h1>
+    <h1 style="margin:0" title="SHOWmol — Structure Highlighting &amp; Observation on the Web">SHOWmol</h1>
     <select id="lang" data-notr title="Language"><option value="ja">日本語</option><option value="en">English</option></select>
   </div>
   <div id="stickyTop">
@@ -413,6 +427,9 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
 
   <div class="tabpane" data-tab="view">
   <h2>表示・出力</h2>
+  <div class="small" style="margin-bottom:6px">見出しを押すと開閉します。</div>
+  <details class="sec" data-sec="look" open><summary><b>① 全体の見た目</b><span class="sechint">背景・質感・輪郭線・回転</span></summary>
+  <div class="secbody">
   <div class="row">
     <select id="bg"><option value="black">背景: 黒</option><option value="white">背景: 白</option><option value="#202634">背景: 紺グレー</option></select>
     <select id="cam"><option value="perspective">透視投影</option><option value="orthographic">平行投影</option></select>
@@ -424,8 +441,27 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
       <option value="flat">質感: フラット（イラスト風）</option>
       <option value="gloss">質感: 光沢あり</option>
     </select>
+    <select id="outline" title="カートゥーン・スティック・塩基などに黒い輪郭線を付けます（半透明の部分には付きません）">
+      <option value="0">輪郭線: なし</option><option value="1">輪郭線: 細め</option><option value="2">輪郭線: 標準</option><option value="3">輪郭線: 太め</option>
+    </select>
   </div>
-  <div id="focusOpts">
+  <div class="row">
+    <select id="fogSel" title="奥にあるものほど背景の色に近づけて、手前を目立たせます">
+      <option value="0">奥のぼかし: なし</option><option value="1" selected>奥のぼかし: 標準</option><option value="2">奥のぼかし: 強め</option>
+    </select>
+    <button id="toonPreset" title="質感をフラット、背景を白、輪郭線を標準、奥のぼかしを強めにします">イラスト風にする</button>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="seqOn" checked> 配列（1文字）を画面下に表示</label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="spin"> 回転</label>
+    <button id="resetView">全体表示</button>
+  </div>
+  </div>
+  </details>
+  <details class="sec" data-sec="focus" id="focusOpts" open><summary><b>② クリックしたときの表示</b><span class="sechint">残基の周りのスティック・相互作用・周りを薄くする</span></summary>
+  <div class="secbody">
   <div class="row">
     <label><input type="checkbox" id="focusSc" checked> 選んだ残基の周囲5Åもスティック表示</label>
     <label><input type="checkbox" id="focusZoom" checked> 選んだ場所にズーム</label>
@@ -439,6 +475,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
     <label class="small"><input type="checkbox" id="focusDist" checked> 距離</label>
     <label class="small"><input type="checkbox" id="focusListOn" checked> 一覧を表示</label>
   </div>
+  <div class="subh">周りを薄くして強調する</div>
   <div class="row">
     <label><input type="checkbox" id="spotOn"> 周りを薄くしてクリックした場所を強調</label>
   </div>
@@ -447,15 +484,34 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
   <div class="row"><span class="small">外側の濃さ</span><input type="range" id="spotOp" min="0" max="0.8" step="0.05" value="0.25"><span class="lv" id="spotOpV" style="width:40px">0.25</span></div>
   <div class="small">クリックした残基から指定した半径の内側はそのまま、外側を薄くします（濃さ 0 で外側を消します）。表面・リガンド・ほかの構造も外側として薄くなります。「色を背景に近づける」は透けないので、手前にある部分がクリックした場所を隠すことがあります。</div>
   </div>
+  </details>
+  <details class="sec" data-sec="label"><summary><b>③ 残基ラベル</b><span class="sechint">解析用 / 図用（重ならないように並べる）</span></summary>
+  <div class="secbody">
   <div class="row">
-    <label><input type="checkbox" id="seqOn" checked> 配列（1文字）を画面下に表示</label>
+    <select id="lblMode" title="解析用：分子の中に表示し、手前の分子に隠れます。図用：分子の上に重ねて表示し、ドラッグや自動配置で文字が重ならないように整えられます">
+      <option value="ngl">表示: 解析用（分子の中に表示）</option><option value="fig">表示: 図用（動かせる・重ならないように並べる）</option>
+    </select>
+  </div>
+  <div class="small lblFigOnly">ラベルはドラッグ（タブレットでは指でなぞる）で動かせます。動かした位置は書き出す画像とセッションにも入ります。</div>
+  <div class="row">
+    <select id="lblFmt"><option value="Arg51">表記: Arg51</option><option value="R51">表記: R51</option><option value="ARG51">表記: ARG51</option></select>
+    <select id="lblChain"><option value="auto">Chain名: 界面解析のときだけ</option><option value="on">Chain名: 付ける</option><option value="off">Chain名: 付けない</option></select>
   </div>
   <div class="row">
-    <label><input type="checkbox" id="spin"> 回転</label>
-    <button id="resetView">全体表示</button>
+    <select id="lblSize"><option value="11">文字: 小</option><option value="14" selected>文字: 中</option><option value="18">文字: 大</option><option value="24">文字: 特大</option></select>
+    <label><input type="checkbox" id="lblBold" checked> 太字</label>
+    <label class="lblFigOnly"><input type="checkbox" id="lblHalo" checked> 縁取り</label>
+    <label class="lblFigOnly"><input type="checkbox" id="lblLine" checked> 引き出し線</label>
   </div>
-  <div class="card" id="imgBox" style="margin:8px 0">
-    <div style="font-weight:600;margin-bottom:4px">画像の書き出し（論文用 PNG）</div>
+  <div class="row">
+    <button id="lblAuto" title="図用の表示に切り替えて、重なっているラベルを、元の残基からなるべく離れないように押し広げます">ラベルを自動配置</button>
+    <button id="lblReset" class="lblFigOnly" title="動かしたラベルをすべて元の位置（残基の上）に戻します">位置をリセット</button>
+  </div>
+  </div>
+  </details>
+  <details class="sec" data-sec="img"><summary><b>④ 画像の書き出し</b><span class="sechint">論文用 PNG（mm・dpi を指定）</span></summary>
+  <div class="secbody">
+  <div id="imgBox">
     <div class="row"><span class="small">幅</span><input type="number" id="imgW" value="85" min="1" step="1" style="width:70px">
       <select id="imgUnit"><option value="mm">mm</option><option value="in">inch</option><option value="px">px</option></select>
       <span class="small">解像度</span><input type="number" id="imgDpi" value="600" min="72" max="2400" step="50" style="width:70px"><span class="small">dpi</span></div>
@@ -466,16 +522,26 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
     <div class="row"><button class="pri" id="snap">PNGを書き出す</button><label class="small"><input type="checkbox" id="transp"> 透過背景</label></div>
     <div class="small">PNGに解像度（dpi）の情報を書き込むので、Illustrator・PowerPoint・Word に配置すると指定した大きさになります。縦横比を変えると、書き出しの間だけ画面の枠がその比率に変わります（画面に見えている範囲が基準です）。</div>
   </div>
+  </div>
+  </details>
+  <details class="sec" data-sec="ses"><summary><b>⑤ セッションの保存</b><span class="sechint">表示や解析の状態を .json に保存</span></summary>
+  <div class="secbody">
   <div class="row">
     <button class="pri" id="saveSes">セッションを保存</button>
     <button id="openSes">セッションを開く…</button>
     <input type="file" id="sesFile" accept=".json" hidden>
   </div>
   <div class="small">構造・Chainの色と表示形式・選択範囲・マップの設定・相互作用解析・視点をまとめて .json に保存します。手元の構造ファイルや40 MB以下のマップファイルは中に埋め込みます。.jsonは画面にドロップしても開けます。</div>
-  <div class="small" style="margin-top:10px">
+  </div>
+  </details>
+  <details class="sec" data-sec="help"><summary><b>操作方法</b><span class="sechint">マウス・キーボード・タブレット</span></summary>
+  <div class="secbody">
+  <div class="small">
     左ドラッグ: 回転　右ドラッグ: 平行移動　ホイール: ズーム<br>
     <kbd>Shift</kbd>＋ホイール: 奥行きクリップ（スラブ）<br>原子をクリック: その周囲にズーム<br><kbd>Ctrl</kbd>/<kbd>⌘</kbd>＋クリック: 残基を追加（選択済みなら外す）<br><kbd>Shift</kbd>＋クリック: 前回クリックした残基からその残基までを鎖に沿ってまとめて追加<br>同じ残基を再クリック: 解除<br>範囲選択: 右上の「▭ 範囲選択」をオンにしてドラッグ、または <kbd>Alt</kbd>（Mac は <kbd>Option</kbd>）を押しながらドラッグ。四角の中の残基をまとめて選択（<kbd>Esc</kbd> でオフ）<br>タブレット: 1本指で回転、2本指でズームと移動。配列は文字を少し長押ししてからなぞると範囲選択。複数選ぶときは残基情報の「＋ 追加選択」をオン<br>画面下の配列をドラッグ: その範囲をまとめて選択（<kbd>Ctrl</kbd>/<kbd>⌘</kbd>/<kbd>Shift</kbd> を押しながらだと追加）<br>背景をクリック: 解除して全体表示
   </div>
+  </div>
+  </details>
   <details style="margin-top:12px" id="logBox"><summary>エラーログ（<span id="logN">0</span>）</summary><div id="log" data-notr></div></details>
   </div>
 </aside>
@@ -483,6 +549,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px}
 <main>
   <div id="vwrap">
     <div id="viewport"></div>
+    <div id="lblLayer"><svg id="lblLines"></svg></div>
     <div id="boxLayer"><div id="boxRect"></div></div>
     <div id="vtools"><button id="boxBtn" title="オンの間は、分子ウィンドウ上でドラッグした四角の中の残基をまとめて選択します（Alt／Option を押しながらドラッグでも同じ）。Ctrl／⌘／Shift を押しながら、または「＋ 追加選択」がオンのときは選択に追加します">▭ 範囲選択</button></div>
     <div id="info"><span id="infoT"></span><button id="selSave" title="いまの選択に名前を付けて保存します（「構造」タブの「選択の保存と履歴」に入ります）">★ 選択を保存</button><button id="addMode" title="オンの間は、タップ（クリック）した残基を選択に追加します。キーボードの Ctrl／⌘ と同じ働きです。タブレット向け">＋ 追加選択</button></div>
@@ -524,7 +591,26 @@ let LANG = 'ja';
 try { LANG = localStorage.getItem('pdv_lang') || 'ja'; } catch (e) {}
 const EXACT = new Map(Object.entries({
   'PDB ID（例 4DRB）': 'PDB ID (e.g. 4DRB)',
-  '読込': 'Load', '非対称単位': 'Asymmetric unit', '生物学的集合体 1': 'Biological assembly 1', '生物学的集合体 2': 'Biological assembly 2',
+  '読込': 'Load', '見出しを押すと開閉します。': 'Click a heading to open or close it.',
+  '① 全体の見た目': '① Overall look', '背景・質感・輪郭線・回転': 'background, material, outlines, rotation',
+  '② クリックしたときの表示': '② When you click a residue', '残基の周りのスティック・相互作用・周りを薄くする': 'sticks around the residue, interactions, spotlight',
+  '③ 残基ラベル': '③ Residue labels', '解析用 / 図用（重ならないように並べる）': 'analysis / figure (arranged without overlaps)',
+  '④ 画像の書き出し': '④ Image export', '論文用 PNG（mm・dpi を指定）': 'PNG for papers (set mm and dpi)',
+  '⑤ セッションの保存': '⑤ Sessions', '表示や解析の状態を .json に保存': 'save the display and analysis state as .json',
+  '操作方法': 'Controls', 'マウス・キーボード・タブレット': 'mouse, keyboard, tablet', '周りを薄くして強調する': 'Fade the surroundings to highlight', '表示: 解析用（分子の中に表示）': 'Labels: analysis (inside the scene)', '表示: 図用（動かせる・重ならないように並べる）': 'Labels: figure (movable, no overlaps)',
+  '解析用：分子の中に表示し、手前の分子に隠れます。図用：分子の上に重ねて表示し、ドラッグや自動配置で文字が重ならないように整えられます': 'Analysis: drawn inside the scene and hidden behind nearer molecules. Figure: drawn on top; drag or arrange them so they do not overlap',
+  '図用の表示に切り替えて、重なっているラベルを、元の残基からなるべく離れないように押し広げます': 'Switches to figure labels and spreads overlapping labels apart while keeping them near their residues', '残基ラベル': 'Residue labels', '表記: Arg51': 'Style: Arg51', '表記: R51': 'Style: R51', '表記: ARG51': 'Style: ARG51',
+  'Chain名: 界面解析のときだけ': 'Chain: interface analysis only', 'Chain名: 付ける': 'Chain: always', 'Chain名: 付けない': 'Chain: never',
+  '文字: 小': 'Text: small', '文字: 中': 'Text: medium', '文字: 大': 'Text: large', '文字: 特大': 'Text: extra large', '太字': 'Bold', '縁取り': 'Halo', '引き出し線': 'Leader lines',
+  'ラベルを自動配置': 'Arrange labels', '位置をリセット': 'Reset positions', 'ラベルの位置を元に戻しました': 'Label positions reset', '配置するラベルがありません': 'No labels to arrange',
+  'ラベルはドラッグ（タブレットでは指でなぞる）で動かせます。動かした位置は書き出す画像とセッションにも入ります。': 'Drag a label (slide with a finger on tablets) to move it. Moved positions are kept in exported images and sessions.',
+  '重なっているラベルを、元の残基からなるべく離れないように押し広げます': 'Spreads overlapping labels apart while keeping them near their residues',
+  '動かしたラベルをすべて元の位置（残基の上）に戻します': 'Moves all labels back onto their residues', '輪郭線: なし': 'Outline: none', '輪郭線: 細め': 'Outline: thin', '輪郭線: 標準': 'Outline: standard', '輪郭線: 太め': 'Outline: thick',
+  '奥のぼかし: なし': 'Depth fade: none', '奥のぼかし: 標準': 'Depth fade: standard', '奥のぼかし: 強め': 'Depth fade: strong', 'イラスト風にする': 'Illustration style',
+  'カートゥーン・スティック・塩基などに黒い輪郭線を付けます（半透明の部分には付きません）': 'Adds black outlines to cartoons, sticks, bases, etc. (not to translucent parts)',
+  '奥にあるものほど背景の色に近づけて、手前を目立たせます': 'Blends distant parts into the background so the front stands out',
+  '質感をフラット、背景を白、輪郭線を標準、奥のぼかしを強めにします': 'Sets material to flat, background to white, outline to standard and depth fade to strong',
+  'イラスト風にしました（質感: フラット、背景: 白、輪郭線: 標準、奥のぼかし: 強め）': 'Illustration style on (flat material, white background, standard outline, strong depth fade)', '非対称単位': 'Asymmetric unit', '生物学的集合体 1': 'Biological assembly 1', '生物学的集合体 2': 'Biological assembly 2',
   '非対称単位（登録された座標そのまま）か、PDBに登録された生物学的集合体か': 'Asymmetric unit (coordinates as deposited) or a biological assembly registered in the PDB',
   '解析に加える対称分子（Chain単位）。分子ウィンドウで対称分子をクリックしても選べます。': 'Symmetry copies to add for analysis (per chain). You can also click a copy in the viewer.',
   '選んだ対称分子を加えた構造を作る': 'Build a structure with the picked copies',
@@ -747,6 +833,7 @@ const PATTERNS = [
   P(/^この構造は、(.+) に対称分子（(.+)）を加えて作ったものです。.*$/, (m, a, b) => `This structure was built from ${a} by adding symmetry copies (${b.replace(/、/g, ', ')}). Show or re-pick symmetry copies in the original structure.`),
   P(/^対称分子を加えた構造を削除し、(.+) に戻しました$/, (m, a) => `Deleted the structure with symmetry copies and returned to ${a}`),
   P(/^(.+) に切り替えました（対称分子を加えた構造は非表示にして残しています。.*$/, (m, a) => `Switched to ${a} (the structure with symmetry copies is kept hidden; tick it in the structure list to show it again)`),
+  P(/^ラベル (\d+) 個を重ならないように配置しました。.*$/, (m, n) => `Arranged ${n} labels so they do not overlap. Drag any label to adjust it`),
   P(/^範囲選択: オン。.*$/, () => 'Box select: on. Drag in the molecule window to select the residues inside the box (press again to turn off)'),
   P(/^範囲選択: (\d+) 残基を(選択しました|追加しました)（奥にある残基も含みます）。.*$/, (m, n, k) => `Box select: ${k === '追加しました' ? 'added' : 'selected'} ${n} residues (including those further back). Save them as a group with "★ Save selection"`),
   P(/^範囲が広すぎます（(\d+) 残基）。.*$/, (m, n) => `The box is too large (${n} residues). Up to 300; zoom in first to narrow it down`),
@@ -2220,6 +2307,7 @@ const pairShown = p => visibleItems(p).length > 0 || (ifOn.cont && p.min <= ifc.
 function drawIfc() {
   if (!ifc || !comp) return;
   ifc.reps.forEach(r => comp.removeRepresentation(r)); ifc.reps = [];
+  setLabelSet('ifc', comp, []);
   if (ifc.shape) { stage.removeComponent(ifc.shape); ifc.shape = null; }
   const shown = ifc.pairs.filter(pairShown);
   // residues to show as sticks
@@ -2236,12 +2324,7 @@ function drawIfc() {
     labelIdx.push(la.i);
   }
   if (idx.length) ifc.reps.push(...sticksByChain(idx, {radiusScale: 0.9 * stickPref.w}));
-  if ($('#ifLabels').checked && labelIdx.length) {
-    const dark = darkBg();
-    ifc.reps.push(comp.addRepresentation('label', {sele: '@' + labelIdx.join(','), labelType: 'format', labelFormat: '%(chainname)s:%(resname)s%(resno)s',
-      color: dark ? '#ffffff' : '#111111', showBackground: true, backgroundColor: dark ? '#000000' : '#ffffff', backgroundOpacity: 0.55,
-      zOffset: 2, attachment: 'middle-center'}));
-  }
+  setLabelSet('ifc', comp, $('#ifLabels').checked ? labelIdx : []);
   ifc.shape = lineShape(shown.flatMap(visibleItems), $('#ifDist').checked);
   if (!$('#ifShow').checked) setIfcVisible(false);
 }
@@ -2279,6 +2362,7 @@ function setIfcVisible(on) {
   if (!ifc) return;
   ifc.reps.forEach(r => r.setVisibility(on));
   if (ifc.shape) ifc.shape.setVisibility(on);
+  labelSetVisible('ifc', comp, on);
 }
 
 function renderIfc() {
@@ -2347,6 +2431,7 @@ function clearIfc() {
   if (!ifc) return;
   ifc.reps.forEach(r => comp && comp.removeRepresentation(r));
   if (ifc.shape) stage.removeComponent(ifc.shape);
+  setLabelSet('ifc', comp, []);
   ifc = null; renderIfc();
 }
 $('#ifClear').onclick = () => {
@@ -2838,7 +2923,7 @@ async function saveSession() {
         s.maps.push({...base, source: {type: 'file', name: m.source.name, ext: m.source.ext, gz: m.source.gz, data: big ? null : await fileToDataURL(m.source.file)}});
       }
     }
-    s.view = {orientation: stage.viewerControls.getOrientation().toArray(), bg: $('#bg').value, cam: $('#cam').value, look: $('#look').value,
+    s.view = {orientation: stage.viewerControls.getOrientation().toArray(), bg: $('#bg').value, cam: $('#cam').value, look: $('#look').value, outline: outlineLevel, fog: +$('#fogSel').value, lbl: {...lblPref}, lblOff: [...lblOff],
               focusSc: $('#focusSc').checked, focusZoom: $('#focusZoom').checked, spin: $('#spin').checked,
               focusIx: $('#focusIx').checked, focusDist: $('#focusDist').checked, seq: $('#seqOn').checked,
               hb: {...HBSET}, ifCat: {...ifCat}, focusCat: {...focusCat}, stick: {...stickPref},
@@ -2924,6 +3009,10 @@ async function openSession(file) {
   if (v.bg) { $('#bg').value = v.bg; stage.setParameters({backgroundColor: v.bg}); }
   if (v.cam) { $('#cam').value = v.cam; stage.setParameters({cameraType: v.cam}); }
   if (v.look && LOOKS[v.look]) { $('#look').value = v.look; applyLook(); }
+  if (v.outline !== undefined) setOutline(v.outline);
+  if (v.lbl) { Object.assign(lblPref, v.lbl); lblWriteUI(); lblSavePref(); lblRetext(); lblStyle(); lblFrame(); }
+  if (Array.isArray(v.lblOff)) { lblOff.clear(); v.lblOff.forEach(([k, o]) => lblOff.set(k, o)); }
+  if (v.fog !== undefined) setFog(v.fog);
   if (v.focusSc !== undefined) $('#focusSc').checked = v.focusSc;
   if (v.focusZoom !== undefined) $('#focusZoom').checked = v.focusZoom;
   if (v.focusIx !== undefined) $('#focusIx').checked = v.focusIx;
@@ -3333,6 +3422,7 @@ $('#symShowOrig').onclick = () => symBackToOrig(false);
 /* ---------- click: centre + neighbourhood ---------- */
 function clearFocusDraw() {
   focusReps.forEach(r => comp.removeRepresentation(r)); focusReps = [];
+  setLabelSet('focus', null, []);
   if (focusShape) { stage.removeComponent(focusShape); focusShape = null; }
   spotRestore();
   focusItems = []; renderFlist();
@@ -3492,6 +3582,7 @@ $('#flist').addEventListener('click', async e => {
     if (!optsHintSeen) { optsHintSeen = true; try { localStorage.setItem('pdv_opts_hint', '1'); } catch (er) {} renderFlist(); }
     showTab('view');
     const box = $('#focusOpts');
+    box.open = true;
     box.scrollIntoView({behavior: 'smooth', block: 'start'});
     box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
     return;
@@ -3579,11 +3670,7 @@ function focusOn(list, move) {
       setInfo(infoBase + '　｜ ' + (sum || '特定の相互作用なし'));
     }
     applySpot(list);
-    if (lab.length) {
-      const dark = darkBg();
-      focusReps.push(comp.addRepresentation('label', {sele: '@' + lab.join(','), labelType: 'format', labelFormat: '%(resname)s%(resno)s',
-        color: dark ? '#ffffff' : '#111111', zOffset: 2, attachment: 'middle-center'}));
-    }
+    setLabelSet('focus', comp, lab);
   } catch (err) { log('周囲表示: ' + (err.message || err)); }
 }
 function unfocus() {
@@ -4169,7 +4256,286 @@ if (stage.signals.componentAdded) stage.signals.componentAdded.add(c => {
 });
 $('#look').onchange = () => { applyLook(); try { localStorage.setItem('pdv_look', $('#look').value); } catch (e) {} };
 try { const l = localStorage.getItem('pdv_look'); if (l && LOOKS[l]) { $('#look').value = l; applyLook(); } } catch (e) {}
+/* ---------- residue labels as an HTML layer over the viewer ----------
+   NGL draws labels inside the 3D scene and cannot move them one by one or keep them from overlapping.
+   Here each label is a small HTML element that follows its atom on screen every frame. A label can be dragged
+   away from its atom; the offset (in screen pixels) is kept per residue, used again when the same residue is
+   labelled later, saved in sessions, and drawn into exported PNGs. */
+const LBL_KEY = 'pdv_lbl';
+const lblPref = (() => { const d = {mode: 'ngl', fmt: 'Arg51', chain: 'auto', size: 14, bold: true, halo: true, line: true}; try { Object.assign(d, JSON.parse(localStorage.getItem(LBL_KEY) || '{}')); } catch (e) {} return d; })();
+const lblSets = new Map();        // 'source|component id' -> {src, comp, on, items: [{key, x, y, z, text, el}]}
+const lblOff = new Map();         // residue key -> [dx, dy]
+let lblSeq = 0;
+function lblText(ap, src) {
+  const rn = ap.resname, ic = ap.inscode || '', ch = ap.chainname;
+  const one = ONE[rn];
+  let t = lblPref.fmt === 'R51' ? (one || rn) + ap.resno + ic
+    : lblPref.fmt === 'ARG51' ? rn + ap.resno + ic
+    : (rn.length === 3 ? rn[0] + rn.slice(1).toLowerCase() : rn) + ap.resno + ic;
+  if (lblPref.chain === 'on' || (lblPref.chain === 'auto' && src === 'ifc')) t += `(${ch})`;
+  return t;
+}
+function setLabelSet(src, c, atomIdx) {
+  // remove previous labels of this source (all components for 'focus', which follows the active structure)
+  [...lblSets.keys()].forEach(k => {
+    const S = lblSets.get(k);
+    if (S.src === src && (!c || S.comp === c || src === 'focus')) { S.items.forEach(it => it.el.remove()); lblNglClear(S); lblSets.delete(k); }
+  });
+  if (!c || !atomIdx || !atomIdx.length) { lblFrame(); return; }
+  c.lblId = c.lblId || ++lblSeq;
+  const st = c.structure, ap = st.getAtomProxy(), sid = (structs.find(S => S.comp === c) || {}).name || c.name || c.lblId;   // by name: stays valid when a session is reopened
+  const items = [...new Set(atomIdx)].sort((a, b) => a - b).map(i => {
+    ap.index = i;
+    const key = `${sid}|${ap.chainname}|${ap.resno}|${ap.inscode || ''}`;
+    const el = document.createElement('div'); el.className = 'rlbl';
+    const it = {i, key, x: ap.x, y: ap.y, z: ap.z, text: lblText(ap, src), el, resname: ap.resname, resno: ap.resno, ic: ap.inscode || '', chain: ap.chainname};
+    el.textContent = it.text;
+    lblDragSetup(it);
+    $('#lblLayer').appendChild(el);
+    return it;
+  });
+  const S = {src, comp: c, on: true, items, reps: []};
+  lblSets.set(`${src}|${c.lblId}`, S);
+  lblStyle(); lblNgl(S); lblFrame();
+}
+/* "analysis" mode: the labels are NGL labels inside the 3D scene (hidden behind molecules, as before);
+   "figure" mode: the HTML labels above, which can be dragged and arranged */
+const lblFig = () => lblPref.mode === 'fig';
+function lblNglClear(S) { (S.reps || []).forEach(r => { try { S.comp.removeRepresentation(r); } catch (e) {} }); S.reps = []; }
+function lblNgl(S) {
+  lblNglClear(S);
+  if (lblFig() || !S.items.length) return;
+  const {fg, bg} = lblColors(), ifc = S.src === 'ifc';
+  const r = S.comp.addRepresentation('label', {sele: '@' + S.items.map(it => it.i).join(','), labelType: 'text', labelText: Object.fromEntries(S.items.map(it => [it.i, it.text])),   // keyed by atom index
+    color: fg, zOffset: 2, attachment: 'middle-center', radiusScale: (+lblPref.size || 14) / 14, fontWeight: lblPref.bold ? 'bold' : 'normal',
+    ...(ifc ? {showBackground: true, backgroundColor: bg, backgroundOpacity: 0.55} : {})});
+  r.setVisibility(S.on);
+  S.reps = [r];
+}
+function lblNglAll() { lblSets.forEach(lblNgl); }
+function labelSetVisible(src, c, on) { const S = c && lblSets.get(`${src}|${c.lblId}`); if (S) { S.on = on; (S.reps || []).forEach(r => r.setVisibility(on)); lblFrame(); } }
+function lblRetext() { lblSets.forEach(S => S.items.forEach(it => { const ap = {resname: it.resname, resno: it.resno, inscode: it.ic, chainname: it.chain}; it.text = lblText(ap, S.src); it.el.textContent = it.text; })); lblNglAll(); }
+function setLblMode(m) {
+  lblPref.mode = m === 'fig' ? 'fig' : 'ngl'; $('#lblMode').value = lblPref.mode; lblSavePref();
+  document.querySelectorAll('.lblFigOnly').forEach(e => e.style.display = lblFig() ? '' : 'none');
+  lblNglAll(); lblFrame();
+}
+function lblColors() { const dark = darkBg(); return {fg: dark ? '#ffffff' : '#111111', bg: dark ? '#000000' : '#ffffff'}; }
+function lblStyle() {
+  const {fg, bg} = lblColors(), sz = +lblPref.size || 14;
+  const halo = lblPref.halo ? [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1.4], [0, -1.4], [1.4, 0], [-1.4, 0]].map(([a, b]) => `${a}px ${b}px 0 ${bg}`).join(',') : 'none';
+  lblSets.forEach(S => S.items.forEach(it => { const e = it.el.style; e.fontSize = sz + 'px'; e.fontWeight = lblPref.bold ? '700' : '400'; e.color = fg; e.textShadow = halo; }));
+}
+/* screen position (CSS px within the viewer) of a label's atom; null if behind the camera or hidden */
+const lblV = typeof NGL !== 'undefined' ? new NGL.Vector3() : null;
+function lblAnchor(S, it, W, H) {
+  const V = stage.viewer;
+  lblV.set(it.x, it.y, it.z).applyMatrix4(V.modelGroup.matrixWorld.clone().multiply(S.comp.matrix)).project(V.camera);
+  if (lblV.z > 1 || lblV.z < -1) return null;
+  return [(lblV.x + 1) / 2 * (W || V.width), (1 - lblV.y) / 2 * (H || V.height)];
+}
+function lblShown(S) { return S.on && S.comp.visible && stage.compList.includes(S.comp); }
+function lblFrame() {
+  const svg = $('#lblLines'); if (!svg) return;
+  if (!lblFig()) { lblSets.forEach(S => S.items.forEach(it => it.el.style.display = 'none')); svg.innerHTML = ''; return; }
+  const lines = [], {fg} = lblColors();
+  lblSets.forEach(S => {
+    const show = lblShown(S);
+    S.items.forEach(it => {
+      const a = show && lblAnchor(S, it);
+      if (!a) { it.el.style.display = 'none'; return; }
+      const o = lblOff.get(it.key) || [0, 0], w = it.el.offsetWidth || 0, h = it.el.offsetHeight || 0;
+      it.el.style.display = '';
+      it.el.style.transform = `translate(${Math.round(a[0] + o[0] - w / 2)}px, ${Math.round(a[1] + o[1] - h / 2)}px)`;
+      if (lblPref.line && Math.hypot(o[0], o[1]) > Math.max(w, h) * 0.6) {
+        const e = lblEdge(a, [a[0] + o[0], a[1] + o[1]], w, h);
+        lines.push(`<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${e[0].toFixed(1)}" y2="${e[1].toFixed(1)}"/>`);
+      }
+    });
+  });
+  svg.innerHTML = lines.length ? `<g stroke="${fg}" stroke-width="1" opacity="0.8">${lines.join('')}</g>` : '';
+}
+/* where the line from the atom meets the edge of the label box (centre c, size w × h) */
+function lblEdge(a, c, w, h) {
+  const dx = a[0] - c[0], dy = a[1] - c[1], hw = w / 2 + 2, hh = h / 2 + 1;
+  const t = Math.min(Math.abs(dx) > 1e-6 ? hw / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-6 ? hh / Math.abs(dy) : Infinity, 1);
+  return [c[0] + dx * t, c[1] + dy * t];
+}
+// NGL renders only when the view changes; follow those renders instead of running a loop every frame
+if (stage.viewer && stage.viewer.signals && stage.viewer.signals.rendered) stage.viewer.signals.rendered.add(() => { if (lblSets.size) lblFrame(); });
+window.addEventListener('resize', () => setTimeout(lblFrame, 50));
+function lblDragSetup(it) {
+  let st = null;
+  it.el.addEventListener('pointerdown', e => {
+    e.stopPropagation(); e.preventDefault();
+    const o = lblOff.get(it.key) || [0, 0];
+    st = {x: e.clientX, y: e.clientY, o: o.slice()};
+    it.el.setPointerCapture(e.pointerId); it.el.classList.add('drag');
+  });
+  it.el.addEventListener('pointermove', e => {
+    if (!st) return;
+    lblOff.set(it.key, [st.o[0] + e.clientX - st.x, st.o[1] + e.clientY - st.y]); lblFrame();
+  });
+  const end = () => { if (!st) return; st = null; it.el.classList.remove('drag'); };
+  it.el.addEventListener('pointerup', end); it.el.addEventListener('pointercancel', end);
+}
+/* push overlapping labels apart, keeping each near its atom and off the other labels' atoms */
+function lblAutoArrange() {
+  if (!lblFig()) setLblMode('fig');
+  lblFrame();
+  const L = [];
+  lblSets.forEach(S => { if (!lblShown(S)) return; S.items.forEach(it => { const a = lblAnchor(S, it); if (a) L.push({it, a, w: it.el.offsetWidth + 4, h: it.el.offsetHeight + 2}); }); });
+  if (!L.length) return status('配置するラベルがありません', true);
+  const seen = new Set(), P = L.filter(l => !seen.has(l.it.key) && seen.add(l.it.key));
+  // start just above each atom, spread a little around it so identical positions can separate
+  P.forEach((l, i) => { const g = i * 2.39996; l.c = [l.a[0] + Math.cos(g) * 4, l.a[1] - l.h * 0.7 + Math.sin(g) * 4]; });
+  const W = stage.viewer.width, H = stage.viewer.height;
+  for (let iter = 0; iter < 400; iter++) {
+    let moved = 0;
+    for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+      const p = P[i], q = P[j], ox = (p.w + q.w) / 2 - Math.abs(p.c[0] - q.c[0]), oy = (p.h + q.h) / 2 - Math.abs(p.c[1] - q.c[1]);
+      if (ox <= 0 || oy <= 0) continue;
+      moved++;
+      if (ox < oy) { const s = (p.c[0] < q.c[0] ? -1 : 1) * ox / 2; p.c[0] += s; q.c[0] -= s; }
+      else { const s = (p.c[1] < q.c[1] ? -1 : 1) * oy / 2; p.c[1] += s; q.c[1] -= s; }
+    }
+    for (const p of P) for (const q of P) {       // keep labels off other residues' atoms
+      if (p === q) continue;
+      const ox = p.w / 2 + 3 - Math.abs(p.c[0] - q.a[0]), oy = p.h / 2 + 3 - Math.abs(p.c[1] - q.a[1]);
+      if (ox > 0 && oy > 0) { moved++; if (ox < oy) p.c[0] += (p.c[0] < q.a[0] ? -1 : 1) * ox; else p.c[1] += (p.c[1] < q.a[1] ? -1 : 1) * oy; }
+    }
+    for (const p of P) {                           // weak pull back toward the atom; stay inside the window
+      p.c[0] += (p.a[0] - p.c[0]) * 0.01; p.c[1] += (p.a[1] - p.h * 0.7 - p.c[1]) * 0.01;
+      p.c[0] = Math.min(W - p.w / 2, Math.max(p.w / 2, p.c[0])); p.c[1] = Math.min(H - p.h / 2, Math.max(p.h / 2, p.c[1]));
+    }
+    if (!moved && iter > 20) break;
+  }
+  P.forEach(p => lblOff.set(p.it.key, [p.c[0] - p.a[0], p.c[1] - p.a[1]]));
+  lblFrame();
+  status(`ラベル ${P.length} 個を重ならないように配置しました。気になるものはドラッグで直せます`);
+}
+/* draw the labels into an exported image: (W, H) image size, the viewer was vw × vh when the labels were placed */
+function lblDraw(ctx, W, H, snap) {
+  if (!snap.length) return;
+  const s = H / snap.vh, ox = (W - snap.vw * s) / 2, {fg, bg} = snap.col;
+  ctx.save();
+  ctx.font = `${lblPref.bold ? 'bold ' : ''}${(+lblPref.size || 14) * s}px Arial, Helvetica, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  snap.forEach(l => {
+    const ax = ox + l.a[0] * s, ay = l.a[1] * s, cx = ox + l.c[0] * s, cy = l.c[1] * s;
+    if (l.line) {
+      const e = lblEdge([ax, ay], [cx, cy], l.w * s, l.h * s);
+      ctx.globalAlpha = 0.8; ctx.strokeStyle = fg; ctx.lineWidth = Math.max(1, s);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(e[0], e[1]); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    if (lblPref.halo) { ctx.strokeStyle = bg; ctx.lineWidth = 3 * s; ctx.strokeText(l.text, cx, cy); }
+    ctx.fillStyle = fg; ctx.fillText(l.text, cx, cy);
+  });
+  ctx.restore();
+}
+function lblSnapshot() {
+  const out = []; out.vw = stage.viewer.width; out.vh = stage.viewer.height; out.col = lblColors();
+  if (!lblFig()) return out;          // analysis mode: NGL draws the labels into the image itself
+  lblSets.forEach(S => { if (!lblShown(S)) return; S.items.forEach(it => {
+    const a = lblAnchor(S, it); if (!a) return;
+    const o = lblOff.get(it.key) || [0, 0], w = it.el.offsetWidth, h = it.el.offsetHeight;
+    out.push({a, c: [a[0] + o[0], a[1] + o[1]], w, h, text: it.text, line: lblPref.line && Math.hypot(o[0], o[1]) > Math.max(w, h) * 0.6});
+  }); });
+  return out;
+}
+function lblSavePref() { try { localStorage.setItem(LBL_KEY, JSON.stringify(lblPref)); } catch (e) {} }
+function lblWriteUI() {
+  $('#lblMode').value = lblPref.mode;
+  document.querySelectorAll('.lblFigOnly').forEach(e => e.style.display = lblFig() ? '' : 'none');
+  $('#lblFmt').value = lblPref.fmt; $('#lblChain').value = lblPref.chain; $('#lblSize').value = String(lblPref.size);
+  $('#lblBold').checked = lblPref.bold; $('#lblHalo').checked = lblPref.halo; $('#lblLine').checked = lblPref.line;
+}
+lblWriteUI();
+$('#lblMode').onchange = e => setLblMode(e.target.value);
+$('#lblFmt').onchange = e => { lblPref.fmt = e.target.value; lblSavePref(); lblRetext(); lblFrame(); };
+$('#lblChain').onchange = e => { lblPref.chain = e.target.value; lblSavePref(); lblRetext(); lblFrame(); };
+$('#lblSize').onchange = e => { lblPref.size = +e.target.value; lblSavePref(); lblStyle(); lblNglAll(); lblFrame(); };
+$('#lblBold').onchange = e => { lblPref.bold = e.target.checked; lblSavePref(); lblStyle(); lblNglAll(); lblFrame(); };
+$('#lblHalo').onchange = e => { lblPref.halo = e.target.checked; lblSavePref(); lblStyle(); };
+$('#lblLine').onchange = e => { lblPref.line = e.target.checked; lblSavePref(); lblFrame(); };
+$('#lblAuto').onclick = lblAutoArrange;
+$('#lblReset').onclick = () => { lblOff.clear(); lblFrame(); status('ラベルの位置を元に戻しました'); };
+$('#bg').addEventListener('change', () => { lblStyle(); lblNglAll(); lblFrame(); });
+/* ---------- outlines (illustration style) ----------
+   NGL has no silhouette rendering. Each opaque representation gets a black copy that is slightly thicker and
+   shows only its back faces ("inverted hull"): it peeks out around the edges of the original as an outline.
+   The copies are kept in step with the originals by outlineSync(), which runs every 0.4 s while outlines are on. */
+const OUTLINE_K = {      // thickness factor per level (none, thin, standard, thick)
+  cartoon: [0, 1.06, 1.12, 1.18], tube: [0, 1.06, 1.12, 1.18], base: [0, 1.6, 2.0, 2.6],
+  licorice: [0, 1.6, 2.0, 2.6], 'ball+stick': [0, 1.3, 1.6, 2.0], spacefill: [0, 1.05, 1.09, 1.14]
+};
+const HULL_KEYS = ['sele', 'aspectRatio', 'radiusType', 'radiusSize', 'radiusScale', 'radialSegments', 'subdiv', 'capped', 'smoothSheet', 'tension',
+  'multipleBond', 'bondScale', 'bondSpacing', 'cylinderOnly', 'sphereDetail', 'quality', 'openEnded', 'linewidth'];
+const hulls = new Map();          // original RepresentationElement -> {h, sig}
+const hullSet = new Set();
+let outlineLevel = 0, outlineTimer = null;
+function outlineSync() {
+  const want = new Set();
+  stage.compList.forEach(c => {
+    if (!c.reprList || !c.structure) return;
+    c.reprList.slice().forEach(r => {
+      if (hullSet.has(r)) return;
+      const t = r.repr && r.repr.type, K = OUTLINE_K[t];
+      if (!K || !outlineLevel || !c.visible || !r.visible) return;
+      const p = r.getParameters();
+      if ((p.opacity ?? 1) < 0.99) return;
+      want.add(r);
+      const q = {}; HULL_KEYS.forEach(k => { if (p[k] !== undefined) q[k] = p[k]; });
+      q.radiusScale = (p.radiusScale || 1) * K[outlineLevel];
+      const sig = t + JSON.stringify(q) + JSON.stringify(c.matrix.elements);
+      const old = hulls.get(r);
+      if (old && old.sig === sig) return;
+      if (old) { hullSet.delete(old.h); try { c.removeRepresentation(old.h); } catch (e) {} }
+      const h = c.addRepresentation(t, {...q, color: '#111111', side: 'back', opacity: 1, disablePicking: true, disableImpostor: true, roughness: 1, metalness: 0});
+      hullSet.add(h); hulls.set(r, {h, sig});
+    });
+  });
+  hulls.forEach((v, r) => {
+    if (want.has(r)) return;
+    hullSet.delete(v.h);
+    try { if (v.h.parent) v.h.parent.removeRepresentation(v.h); } catch (e) {}
+    hulls.delete(r);
+  });
+}
+function setOutline(level) {
+  outlineLevel = +level || 0;
+  $('#outline').value = String(outlineLevel);
+  clearInterval(outlineTimer); outlineTimer = null;
+  outlineSync();
+  if (outlineLevel) outlineTimer = setInterval(outlineSync, 400);
+  try { localStorage.setItem('pdv_outline', outlineLevel); } catch (e) {}
+}
+const FOGS = [[100, 100], [50, 100], [35, 100]];
+function setFog(level) {
+  const f = FOGS[+level] || FOGS[1];
+  $('#fogSel').value = String(FOGS.indexOf(f));
+  stage.setParameters({fogNear: f[0], fogFar: f[1]});
+  try { localStorage.setItem('pdv_fog', $('#fogSel').value); } catch (e) {}
+}
+$('#outline').onchange = e => setOutline(e.target.value);
+$('#fogSel').onchange = e => setFog(e.target.value);
+$('#toonPreset').onclick = () => {
+  $('#look').value = 'flat'; applyLook(); try { localStorage.setItem('pdv_look', 'flat'); } catch (e) {}
+  $('#bg').value = 'white'; $('#bg').onchange({target: $('#bg')});
+  setOutline(2); setFog(2);
+  status('イラスト風にしました（質感: フラット、背景: 白、輪郭線: 標準、奥のぼかし: 強め）');
+};
+try { const o = +localStorage.getItem('pdv_outline'); if (o) setOutline(o); const f = localStorage.getItem('pdv_fog'); if (f !== null) setFog(f); } catch (e) {}
 $('#spin').onchange = e => stage.setSpin(e.target.checked);
+/* the sections of the 表示・出力 tab remember whether they were open */
+(function secMemory() {
+  let st = {}; try { st = JSON.parse(localStorage.getItem('pdv_secs') || '{}'); } catch (e) {}
+  document.querySelectorAll('details.sec').forEach(d => {
+    const k = d.dataset.sec;
+    if (k in st) d.open = !!st[k];
+    d.addEventListener('toggle', () => { st[k] = d.open; try { localStorage.setItem('pdv_secs', JSON.stringify(st)); } catch (e) {} });
+  });
+})();
 $('#resetView').onclick = () => comp ? comp.autoView(600) : stage.autoView();
 /* publication PNG: width in mm / inch / px at a chosen dpi; the dpi is written into the PNG (pHYs chunk) */
 const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -4218,6 +4584,7 @@ async function exportImage() {
   const {W, H, dpi, asp} = imgTarget();
   if (W > 16000 || H > 16000 || W * H > 200e6 || (IOS && W * H > 16.7e6)) return status(`画像が大きすぎます（${IOS ? 'iPad・iPhone では約 1,670 万画素まで' : '一辺 16,000 px まで'}）。幅か dpi を下げてください`, true);
   try { clearHL(); } catch (e) {}
+  const lblSnap = lblSnapshot();
   const cont = stage.viewer.container, vw0 = stage.viewer.width, vh0 = stage.viewer.height;
   const keep = {w: cont.style.width, h: cont.style.height};
   let resized = false;
@@ -4240,6 +4607,7 @@ async function exportImage() {
     const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bmp, 0, 0, W, H);
     if (bmp.close) bmp.close();
+    lblDraw(ctx, W, H, lblSnap);
     const png = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('PNGを作れませんでした（メモリ不足の可能性）')), 'image/png'));
     const u8 = pngSetDpi(new Uint8Array(await png.arrayBuffer()), dpi);
     const nm = (structs[active] && structs[active].name) || pdbId || 'structure';

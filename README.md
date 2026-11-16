@@ -1,4 +1,6 @@
-# MoleculeWindow (PDB Viewer)
+# SHOWmol
+
+**S**tructure **H**ighlighting & **O**bservation on the **W**eb
 
 **English** | [日本語](README.ja.md)
 
